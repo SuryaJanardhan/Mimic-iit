@@ -390,7 +390,7 @@ def prepare_linkedin_payload(author_urn, commentary_text, media_asset_urn=None):
             "thirdPartyDistributionChannels": []
         },
         "lifecycleState": "PUBLISHED",
-        "isReshareDisabledByAuthor": false
+        "isReshareDisabledByAuthor": False
     }
 
     if media_asset_urn:
