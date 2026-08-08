@@ -17,6 +17,16 @@ This document provides a detailed function-by-function explanation of the single
 - **Parameters**: `state` (dict), `file_path` (str).
 - **Returns**: None.
 
+### `load_post_analysis_history(file_path="post_analysis_history.json")`
+- **Purpose**: Reads historical post analysis entries from the root JSON file.
+- **Parameters**: `file_path` (str) - Path to root analysis JSON file.
+- **Returns**: List of post history record dictionaries.
+
+### `append_post_analysis_record(record, file_path="post_analysis_history.json")`
+- **Purpose**: Appends a newly published post's analytics entry (timestamp, content type, snippet, trends used, hashtag count) into the root JSON file.
+- **Parameters**: `record` (dict), `file_path` (str).
+- **Returns**: None.
+
 ### `check_rate_limit_budget(endpoint_key, state, max_daily_quota)`
 - **Purpose**: Enforces the **< 80% daily quota threshold** rule. Halts execution if usage reaches 80% of daily max quota or if an error flag is set.
 - **Parameters**: 

@@ -48,6 +48,36 @@ def save_rate_limit_state(state, file_path="rate_limit_state.json"):
         print(f"Error: Failed to save rate limit state: {err}")
 
 
+# Helper: Load post analysis history from root JSON file
+def load_post_analysis_history(file_path="post_analysis_history.json"):
+    """
+    Loads historical post analysis logs from root JSON file.
+    Returns list of post history objects.
+    """
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as err:
+            print(f"Warning: Could not read post analysis history file: {err}")
+    return []
+
+
+# Helper: Append post analysis record to root JSON file
+def append_post_analysis_record(record, file_path="post_analysis_history.json"):
+    """
+    Appends a new post execution and analytics record to the root JSON history file.
+    """
+    history = load_post_analysis_history(file_path)
+    history.append(record)
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2)
+        print(f"Success: Post analysis record appended to root JSON ({file_path}).")
+    except Exception as err:
+        print(f"Error: Failed to append post analysis record: {err}")
+
+
 # Core Safety Function: Rate Limit Budget Inspector
 def check_rate_limit_budget(endpoint_key, state, max_daily_quota):
     """
@@ -352,6 +382,18 @@ def run_automation_flow(access_token, author_urn):
     if not success:
         print("Flow Terminated: Post publication encountered issue or reached limit.")
         return False
+
+    # Record post analysis entry to root JSON history
+    analysis_record = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "content_type": content_type,
+        "author_urn": author_urn,
+        "commentary_snippet": post_text[:120] + "...",
+        "hashtag_count": post_text.count("#"),
+        "github_trends_used": [t["name"] for t in trends] if trends else [],
+        "status": "PUBLISHED"
+    }
+    append_post_analysis_record(analysis_record)
 
     print("--- Automation Flow Completed Successfully ---")
     return True
