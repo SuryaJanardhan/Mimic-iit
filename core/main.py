@@ -107,10 +107,10 @@ def check_rate_limit_budget(endpoint_key, state, max_daily_quota):
     return True, remaining
 
 
-# Trend Ingestion: GitHub Trending Repositories
+# Trend Ingestion: GitHub Trending Repositories & Concepts
 def fetch_github_trends(language="python"):
     """
-    Fetches top trending open-source repositories from GitHub API.
+    Dedicated function fetching top trending open-source repositories from GitHub API.
     Returns list of dictionaries containing repository name, description, stars, and URL.
     """
     url = f"https://api.github.com/search/repositories?q=language:{language}+created:>2026-01-01&sort=stars&order=desc"
@@ -133,6 +133,171 @@ def fetch_github_trends(language="python"):
         return []
 
 
+# Trend Ingestion: Dedicated Tech & AI News Collector
+def fetch_tech_news_trends():
+    """
+    Dedicated function fetching real-time tech and AI news headlines from HackerNews top stories API.
+    Returns list of story dictionaries containing title and URL.
+    """
+    url = "https://hacker-news.firebaseio.com/v0/topstories.json"
+    req = urllib.request.Request(url, headers={"User-Agent": "LinkedInAutomationBot/1.0"})
+    news_items = []
+    
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            story_ids = json.loads(response.read().decode("utf-8"))[:5]
+            for story_id in story_ids:
+                item_url = f"https://hacker-news.firebaseio.com/v0/item/{story_id}.json"
+                item_req = urllib.request.Request(item_url, headers={"User-Agent": "LinkedInAutomationBot/1.0"})
+                with urllib.request.urlopen(item_req, timeout=5) as item_resp:
+                    story = json.loads(item_resp.read().decode("utf-8"))
+                    if story and "title" in story:
+                        news_items.append({
+                            "title": story.get("title"),
+                            "url": story.get("url", f"https://news.ycombinator.com/item?id={story_id}")
+                        })
+            return news_items
+    except Exception as err:
+        print(f"Warning: Failed to fetch tech news trends: {err}")
+        return []
+
+
+# Trend Ingestion: GitHub Trending Page Scraper
+def scrape_github_trending_page(language=""):
+    """
+    Dedicated function scraping GitHub's official trending page (https://github.com/trending).
+    Parses repository titles, descriptions, and URLs directly from HTML using regex.
+    Returns list of repository dictionaries.
+    """
+    import re
+    lang_path = f"/{language}" if language else ""
+    url = f"https://github.com/trending{lang_path}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+    req = urllib.request.Request(url, headers=headers)
+    repos = []
+
+    try:
+        with urllib.request.urlopen(req, timeout=12) as response:
+            html = response.read().decode("utf-8", errors="ignore")
+            # Extract repository article blocks
+            articles = re.findall(r'<article class="Box-row">(.*?)</article>', html, re.DOTALL)
+            for article in articles[:5]:
+                repo_match = re.search(r'href="/([^"/]+/[^"/]+)"', article)
+                desc_match = re.search(r'<p class="col-9 color-fg-muted my-1 pr-4">(.*?)</p>', article, re.DOTALL)
+                
+                if repo_match:
+                    repo_path = repo_match.group(1).strip()
+                    repo_desc = desc_match.group(1).strip() if desc_match else "Trending open source project on GitHub."
+                    # Clean HTML tags from description
+                    repo_desc = re.sub(r'<[^>]+>', '', repo_desc).strip()
+                    repos.append({
+                        "name": repo_path.split("/")[-1],
+                        "full_name": repo_path,
+                        "description": repo_desc,
+                        "url": f"https://github.com/{repo_path}"
+                    })
+            print(f"Success: Scraped {len(repos)} repositories from GitHub Trending page.")
+            return repos
+    except Exception as err:
+        print(f"Warning: Failed to scrape GitHub trending page: {err}")
+        return []
+
+
+# Dedicated LLM API Dispatcher (Groq / Gemini / OpenAI Integration)
+def call_llm_api(prompt, provider=None, api_key=None):
+    """
+    Dispatches prompt to LLM provider API (Groq API, Gemini API, or OpenAI API).
+    Uses standard library urllib.request for zero third-party package dependency.
+    Automatically checks environment keys: GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY.
+    """
+    groq_key = api_key or os.getenv("GROQ_API_KEY")
+    gemini_key = api_key or os.getenv("GEMINI_API_KEY")
+    openai_key = api_key or os.getenv("OPENAI_API_KEY")
+
+    # Determine provider based on key presence or explicit preference
+    target_provider = provider or ("groq" if groq_key else ("gemini" if gemini_key else ("openai" if openai_key else None)))
+
+    if not target_provider:
+        print("Notice: No GROQ_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY configured. Utilizing structured template fallback.")
+        return None
+
+    if target_provider.lower() == "groq" and groq_key:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {groq_key}"
+        }
+        payload = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                choices = res_data.get("choices", [])
+                if choices:
+                    print("Success: Post generated via Groq API (llama-3.3-70b-versatile).")
+                    return choices[0].get("message", {}).get("content", "").strip()
+        except Exception as err:
+            print(f"Warning: Groq API call failed: {err}")
+            return None
+
+    elif target_provider.lower() == "gemini" and gemini_key:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                candidates = res_data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        print("Success: Post generated via Gemini API (gemini-1.5-flash).")
+                        return parts[0].get("text", "").strip()
+        except Exception as err:
+            print(f"Warning: Gemini API call failed: {err}")
+            return None
+
+    elif target_provider.lower() == "openai" and openai_key:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {openai_key}"
+        }
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                choices = res_data.get("choices", [])
+                if choices:
+                    print("Success: Post generated via OpenAI API (gpt-4o-mini).")
+                    return choices[0].get("message", {}).get("content", "").strip()
+        except Exception as err:
+            print(f"Warning: OpenAI API call failed: {err}")
+            return None
+
+    return None
+
+
 # Content Strategy: Content Format Selector
 def select_content_type(state):
     """
@@ -153,11 +318,28 @@ def select_content_type(state):
 
 
 # LLM Post Generation Engine
-def generate_llm_post_content(content_type, trend_data, llm_api_key=None):
+def generate_llm_post_content(content_type, trend_data, tech_news_data=None, llm_api_key=None):
     """
-    Generates engaging post content based on selected content type and trend data.
-    Enforces strict zero hashtag constraint.
+    Generates engaging post content based on selected content type, GitHub trend data, and Tech News.
+    Enforces strict zero hashtag constraint. Calls call_llm_api or falls back to template.
     """
+    prompt = (
+        f"You are a senior software architect writing a LinkedIn post.\n"
+        f"Format type: {content_type}\n"
+        f"GitHub Trends Context: {json.dumps(trend_data if trend_data else [])}\n"
+        f"Tech News Context: {json.dumps(tech_news_data if tech_news_data else [])}\n\n"
+        f"STRICT RULES:\n"
+        f"1. Zero hashtags allowed.\n"
+        f"2. Professional, insightful tech tone.\n"
+        f"3. High engagement hook.\n"
+    )
+    
+    # Try calling LLM API
+    generated_text = call_llm_api(prompt, provider="gemini", api_key=llm_api_key)
+    if generated_text:
+        return generated_text
+
+    # Template fallback if LLM API key is not present
     if content_type == "TEXT_MEME":
         return (
             "Senior Dev: It works on my machine.\n"
@@ -369,11 +551,16 @@ def run_automation_flow(access_token, author_urn):
         print("Aborting: Previous error flag is set. Clear state file to resume.")
         return False
 
-    trends = fetch_github_trends(language="python")
+    github_trends = fetch_github_trends(language="python")
+    scraped_trends = scrape_github_trending_page()
+    combined_trends = github_trends + scraped_trends
+    tech_news = fetch_tech_news_trends()
     content_type = select_content_type(state)
-    post_text = generate_llm_post_content(content_type, trends)
+    post_text = generate_llm_post_content(content_type, combined_trends, tech_news_data=tech_news)
 
     print(f"Selected Content Format: {content_type}")
+    print(f"GitHub Trends (API + Scraped) Fetched: {len(combined_trends)} repos")
+    print(f"Tech News Headlines Fetched: {len(tech_news)} items")
     print(f"Generated Post Content:\n{post_text}\n")
 
     # Execute publication
@@ -390,7 +577,8 @@ def run_automation_flow(access_token, author_urn):
         "author_urn": author_urn,
         "commentary_snippet": post_text[:120] + "...",
         "hashtag_count": post_text.count("#"),
-        "github_trends_used": [t["name"] for t in trends] if trends else [],
+        "github_trends_used": [t["name"] for t in github_trends] if github_trends else [],
+        "tech_news_used": [n["title"] for n in tech_news] if tech_news else [],
         "status": "PUBLISHED"
     }
     append_post_analysis_record(analysis_record)

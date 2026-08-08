@@ -40,18 +40,28 @@ This document provides a detailed function-by-function explanation of the single
 ## 3. Content Strategy & Trend Ingestion Functions
 
 ### `fetch_github_trends(language="python")`
-- **Purpose**: Queries the GitHub REST API to retrieve top trending open-source repositories based on recent creation date and star count.
+- **Purpose**: Dedicated function querying GitHub REST API to retrieve top trending open-source repositories.
 - **Parameters**: `language` (str) - Target programming language filter.
 - **Returns**: List of repository dictionaries containing name, description, stars, and URL.
+
+### `fetch_tech_news_trends()`
+- **Purpose**: Dedicated function querying HackerNews top stories API to fetch real-time AI and engineering news headlines.
+- **Parameters**: None.
+- **Returns**: List of tech news dictionaries containing title and URL.
+
+### `call_llm_api(prompt, provider="gemini", api_key=None)`
+- **Purpose**: Dedicated LLM provider dispatcher supporting Gemini API (`gemini-1.5-flash`) or OpenAI API via zero-dependency `urllib.request`. Falls back to local structured template if API key is not set.
+- **Parameters**: `prompt` (str), `provider` (str), `api_key` (optional str).
+- **Returns**: String response from LLM or None if unavailable.
 
 ### `select_content_type(state)`
 - **Purpose**: Selects the post format according to the target strategy mix (80% Serious Technical, 10% Text Meme, 5% Image Meme, 5% Simulated Poll).
 - **Parameters**: `state` (dict) - Usage state used to calculate modulo distribution.
 - **Returns**: String key representing content format ("SERIOUS_TECHNICAL", "TEXT_MEME", "IMAGE_MEME", "SIMULATED_POLL").
 
-### `generate_llm_post_content(content_type, trend_data, llm_api_key=None)`
-- **Purpose**: Constructs post commentary text based on selected content type and trend data, enforcing zero hashtags.
-- **Parameters**: `content_type` (str), `trend_data` (list), `llm_api_key` (optional str).
+### `generate_llm_post_content(content_type, trend_data, tech_news_data=None, llm_api_key=None)`
+- **Purpose**: Constructs LLM prompt combining GitHub trends, Tech News, and content format rules, then calls `call_llm_api` or structured template fallback. Enforces zero hashtags.
+- **Parameters**: `content_type` (str), `trend_data` (list), `tech_news_data` (list), `llm_api_key` (optional str).
 - **Returns**: String containing formatted LinkedIn post text.
 
 ---
