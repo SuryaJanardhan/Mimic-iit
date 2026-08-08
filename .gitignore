@@ -1,0 +1,10 @@
+# Environment secrets
+.env
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Local persistent state (tracked separately in workflow commit step if needed)
+*.log

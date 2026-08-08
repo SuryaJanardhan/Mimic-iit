@@ -15,6 +15,26 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
+# Helper: Load environment variables from local .env file
+def load_env_file(file_path=".env"):
+    """
+    Loads environment variables from local .env file into os.environ if present.
+    Uses standard library parsing for zero external package dependency.
+    """
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, val = line.split("=", 1)
+                        if key.strip() and not os.environ.get(key.strip()):
+                            os.environ[key.strip()] = val.strip()
+            print(f"Success: Loaded environment variables from {file_path}")
+        except Exception as err:
+            print(f"Warning: Could not load .env file: {err}")
+
+
 # Helper: Load persistent rate limit state from disk
 def load_rate_limit_state(file_path="rate_limit_state.json"):
     """
@@ -545,6 +565,7 @@ def run_automation_flow(access_token, author_urn):
     6. Abort immediately if any error occurs.
     """
     print("--- Starting LinkedIn Automation Flow ---")
+    load_env_file()
     state = load_rate_limit_state()
 
     if state.get("error_flag"):
