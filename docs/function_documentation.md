@@ -49,9 +49,9 @@ This document provides a detailed function-by-function explanation of the single
 - **Parameters**: None.
 - **Returns**: List of tech news dictionaries containing title and URL.
 
-### `call_llm_api(prompt, provider="gemini", api_key=None)`
-- **Purpose**: Dedicated LLM provider dispatcher supporting Gemini API (`gemini-1.5-flash`) or OpenAI API via zero-dependency `urllib.request`. Falls back to local structured template if API key is not set.
-- **Parameters**: `prompt` (str), `provider` (str), `api_key` (optional str).
+### `call_llm_api(prompt, provider="groq", api_key=None)`
+- **Purpose**: Dedicated LLM provider dispatcher supporting Groq API (`llama-3.3-70b-versatile`), Gemini API (`gemini-1.5-flash`), or OpenAI API via zero-dependency `urllib.request`. Defaults to Groq API. Falls back to local structured template if API key is not set.
+- **Parameters**: `prompt` (str), `provider` (str, default `"groq"`), `api_key` (optional str).
 - **Returns**: String response from LLM or None if unavailable.
 
 ### `select_content_type(state)`

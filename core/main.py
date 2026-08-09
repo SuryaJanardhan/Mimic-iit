@@ -227,47 +227,60 @@ def scrape_github_trending_page(language=""):
 
 
 # Dedicated LLM API Dispatcher (Groq / Gemini / OpenAI Integration)
-def call_llm_api(prompt, provider=None, api_key=None):
+def call_llm_api(prompt, provider="groq", api_key=None):
     """
     Dispatches prompt to LLM provider API (Groq API, Gemini API, or OpenAI API).
     Uses standard library urllib.request for zero third-party package dependency.
-    Automatically checks environment keys: GROQ_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY.
+    Automatically checks environment keys: GROQ_API_KEY, GROQ_API_KEY_2, GEMINI_API_KEY, OPENAI_API_KEY.
+    Includes automatic failover to GROQ_API_KEY_2 if primary Groq key fails.
     """
-    groq_key = api_key or os.getenv("GROQ_API_KEY")
+    groq_keys = []
+    if api_key:
+        groq_keys.append(api_key)
+    else:
+        if os.getenv("GROQ_API_KEY"):
+            groq_keys.append(os.getenv("GROQ_API_KEY"))
+        if os.getenv("GROQ_API_KEY_2"):
+            groq_keys.append(os.getenv("GROQ_API_KEY_2"))
+
     gemini_key = api_key or os.getenv("GEMINI_API_KEY")
     openai_key = api_key or os.getenv("OPENAI_API_KEY")
 
     # Determine provider based on key presence or explicit preference
-    target_provider = provider or ("groq" if groq_key else ("gemini" if gemini_key else ("openai" if openai_key else None)))
+    target_provider = provider or ("groq" if groq_keys else ("gemini" if gemini_key else ("openai" if openai_key else None)))
 
     if not target_provider:
         print("Notice: No GROQ_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY configured. Utilizing structured template fallback.")
         return None
 
-    if target_provider.lower() == "groq" and groq_key:
+    if target_provider.lower() == "groq" and groq_keys:
         url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {groq_key}"
-        }
         payload = {
             "model": "llama-3.3-70b-versatile",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7
         }
         req_data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
 
-        try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
-                choices = res_data.get("choices", [])
-                if choices:
-                    print("Success: Post generated via Groq API (llama-3.3-70b-versatile).")
-                    return choices[0].get("message", {}).get("content", "").strip()
-        except Exception as err:
-            print(f"Warning: Groq API call failed: {err}")
-            return None
+        for idx, key in enumerate(groq_keys):
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}"
+            }
+            req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+
+            try:
+                with urllib.request.urlopen(req, timeout=20) as response:
+                    res_data = json.loads(response.read().decode("utf-8"))
+                    choices = res_data.get("choices", [])
+                    if choices:
+                        key_label = "primary" if idx == 0 else f"fallback key #{idx + 1}"
+                        print(f"Success: Post generated via Groq API using {key_label} (llama-3.3-70b-versatile).")
+                        return choices[0].get("message", {}).get("content", "").strip()
+            except Exception as err:
+                print(f"Warning: Groq API call failed with key #{idx + 1}: {err}")
+                continue
+        return None
 
     elif target_provider.lower() == "gemini" and gemini_key:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
@@ -355,7 +368,7 @@ def generate_llm_post_content(content_type, trend_data, tech_news_data=None, llm
     )
     
     # Try calling LLM API
-    generated_text = call_llm_api(prompt, provider="gemini", api_key=llm_api_key)
+    generated_text = call_llm_api(prompt, provider="groq", api_key=llm_api_key)
     if generated_text:
         return generated_text
 

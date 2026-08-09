@@ -22,7 +22,8 @@ To enable automated posting and weekly email reports, configure the following se
 |---|---|---|
 | `LINKEDIN_ACCESS_TOKEN` | Bearer token for LinkedIn REST API v2 | `AQV...` |
 | `LINKEDIN_AUTHOR_URN` | URN identifier for your profile | `urn:li:person:bT4mlIV3WS` |
-| `GROQ_API_KEY` | Groq API Key (llama-3.3-70b-versatile) | `gsk_...` |
+| `GROQ_API_KEY` | Primary Groq API Key (llama-3.3-70b-versatile) | `gsk_...` |
+| `GROQ_API_KEY_2` | Fallback Groq API Key (rate limit safety) | `gsk_...` |
 | `GEMINI_API_KEY` | Gemini API Key (gemini-1.5-flash) | `AIzaSy...` |
 | `SMTP_HOST` | Hostname for weekly email delivery | `smtp.gmail.com` |
 | `SMTP_PORT` | Port number for TLS SMTP | `587` |
