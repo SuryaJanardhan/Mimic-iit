@@ -6,10 +6,11 @@ trend aggregation, engagement routines, and weekly email reporting.
 
 import json
 import os
-import sys
+import sys, re
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -558,43 +559,104 @@ def extract_urn_from_linkedin_url(url_or_urn):
     return None
 
 
-def get_target_engagement_posts():
+def search_viral_linkedin_posts_fallback(max_results=2):
     """
-    Loads target post URLs/URNs from TARGET_POST_URLS environment variable or target_posts.json file.
+    Web Search Fallback Engine: Searches public web index for trending LinkedIn tech post URLs.
+    Extracts post URLs matching linkedin.com/posts/ or activity- IDs.
+    """
+    discovered_posts = []
+    search_query = 'site:linkedin.com/posts "system design" OR "AI infrastructure" OR "software architecture"'
+    encoded_query = urllib.parse.quote(search_query)
+    url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html_content = response.read().decode("utf-8", errors="ignore")
+            matches = re.findall(r"(https?://[a-z]+\.linkedin\.com/posts/[a-zA-Z0-9_\-]+)", html_content)
+            unique_urls = list(dict.fromkeys(matches))
+            for found_url in unique_urls[:max_results]:
+                discovered_posts.append({
+                    "url": found_url,
+                    "topic": "Trending tech & AI architecture post",
+                    "source": "WEB_SEARCH_FALLBACK"
+                })
+            if discovered_posts:
+                print(f"Success: Discovered {len(discovered_posts)} viral tech post(s) via web search fallback.")
+    except Exception as err:
+        print(f"Warning: Web search fallback for viral posts encountered issue: {err}")
+
+    return discovered_posts
+
+
+def get_hybrid_target_posts(max_posts=2):
+    """
+    Hybrid Post Discovery Engine:
+    1. Checks specified target creator profiles/pages (target_creators.json, target_posts.json, or TARGET_POST_URLS).
+    2. Uses live web search fallback if no target creator posts are found.
+    Caps total targets to max_posts (default 2 daily).
     """
     posts = []
+
+    # Source 1: Direct target URLs from environment variable
     env_urls = os.getenv("TARGET_POST_URLS", "")
     if env_urls:
         for url in env_urls.split(","):
             if url.strip():
-                posts.append({"url": url.strip(), "topic": "Tech & AI trends"})
+                posts.append({"url": url.strip(), "topic": "Target Creator Tech Post", "source": "ENV_CONFIG"})
 
-    target_file = "target_posts.json"
-    if os.path.exists(target_file):
-        try:
-            with open(target_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    posts.extend(data)
-        except Exception as err:
-            print(f"Warning: Failed to read target_posts.json: {err}")
+    # Source 2: Curated target creators JSON file (target_creators.json or target_posts.json)
+    for filename in ["target_creators.json", "target_posts.json"]:
+        if os.path.exists(filename):
+            try:
+                with open(filename, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, str):
+                                posts.append({"url": item, "topic": "Curated Creator Post", "source": "TARGET_JSON"})
+                            elif isinstance(item, dict) and "url" in item:
+                                posts.append(item)
+            except Exception as err:
+                print(f"Warning: Failed to read {filename}: {err}")
 
-    return posts
+    # Source 3: Web Search Fallback if no target creator posts available
+    if len(posts) < max_posts:
+        needed = max_posts - len(posts)
+        print(f"Target creator posts count ({len(posts)}) below required cap ({max_posts}). Executing web search fallback...")
+        fallback_posts = search_viral_linkedin_posts_fallback(max_results=needed)
+        posts.extend(fallback_posts)
+
+    return posts[:max_posts]
 
 
-def process_target_engagements(access_token, state, llm_api_key=None):
+def process_target_engagements(access_token, state, llm_api_key=None, max_daily_likes=2, max_daily_comments=2):
     """
-    Parses target post URLs into API URNs, uses Groq LLM to generate value-add technical comments,
-    and executes both LIKE and COMMENT engagements on LinkedIn.
+    Parses hybrid target posts, extracts API URNs, uses Groq LLM to generate value-add technical comments,
+    and executes engagement with strict daily cap of 2 likes and 2 comments maximum.
     """
-    target_posts = get_target_engagement_posts()
-    if not target_posts:
-        print("Notice: No target engagement posts configured in TARGET_POST_URLS or target_posts.json.")
+    current_likes = state.get("likes_count", 0)
+    current_comments = state.get("comments_count", 0)
+
+    if current_likes >= max_daily_likes and current_comments >= max_daily_comments:
+        print(f"Engagement Complete: Daily limit reached ({current_likes}/{max_daily_likes} likes, {current_comments}/{max_daily_comments} comments). Skipping.")
         return state
 
-    print(f"Processing engagement for {len(target_posts)} target post(s)...")
+    target_posts = get_hybrid_target_posts(max_posts=max(max_daily_likes, max_daily_comments))
+    if not target_posts:
+        print("Notice: No target engagement posts found via target creator list or web search fallback.")
+        return state
+
+    print(f"Processing engagement for target post(s) (Strict Daily Limit: {max_daily_likes} Likes, {max_daily_comments} Comments max)...")
 
     for item in target_posts:
+        current_likes = state.get("likes_count", 0)
+        current_comments = state.get("comments_count", 0)
+
+        if current_likes >= max_daily_likes and current_comments >= max_daily_comments:
+            print(f"Engagement Cap Reached: Completed daily maximum ({max_daily_likes} likes, {max_daily_comments} comments). Stopping.")
+            break
+
         raw_url = item.get("url") if isinstance(item, dict) else item
         topic_context = item.get("topic", "System design & AI infrastructure") if isinstance(item, dict) else "Tech trends"
 
@@ -603,19 +665,23 @@ def process_target_engagements(access_token, state, llm_api_key=None):
             print(f"Warning: Could not parse valid URN from target URL: {raw_url}")
             continue
 
-        prompt = (
-            f"Write a short, insightful LinkedIn comment (2 to 3 sentences) responding to a tech post about: {topic_context}.\n"
-            f"STRICT RULES:\n"
-            f"1. Zero hashtags allowed.\n"
-            f"2. Playful, insightful tech tone.\n"
-            f"3. Do not include any emojis.\n"
-            f"4. Add technical value or ask a thought-provoking engineering question.\n"
-        )
-        comment_text = call_llm_api(prompt, provider="groq", api_key=llm_api_key)
+        # Execute LIKE engagement if under daily 2 limit
+        if current_likes < max_daily_likes:
+            engage_with_viral_post(access_token, post_urn, "LIKE", "", state, max_daily_actions=max_daily_likes)
 
-        engage_with_viral_post(access_token, post_urn, "LIKE", "", state)
-        if comment_text:
-            engage_with_viral_post(access_token, post_urn, "COMMENT", comment_text, state)
+        # Execute COMMENT engagement if under daily 2 limit
+        if current_comments < max_daily_comments:
+            prompt = (
+                f"Write a short, insightful LinkedIn comment (2 to 3 sentences) responding to a tech post about: {topic_context}.\n"
+                f"STRICT RULES:\n"
+                f"1. Zero hashtags allowed.\n"
+                f"2. Playful, insightful tech tone.\n"
+                f"3. Do not include any emojis.\n"
+                f"4. Add technical value or ask a thought-provoking engineering question.\n"
+            )
+            comment_text = call_llm_api(prompt, provider="groq", api_key=llm_api_key)
+            if comment_text:
+                engage_with_viral_post(access_token, post_urn, "COMMENT", comment_text, state, max_daily_actions=max_daily_comments)
 
     return state
 
