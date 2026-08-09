@@ -363,8 +363,10 @@ def generate_llm_post_content(content_type, trend_data, tech_news_data=None, llm
         f"Tech News Context: {json.dumps(tech_news_data if tech_news_data else [])}\n\n"
         f"STRICT RULES:\n"
         f"1. Zero hashtags allowed.\n"
-        f"2. Professional, insightful tech tone.\n"
+        f"2. Playfull, insightful tech tone.\n"
         f"3. High engagement hook.\n"
+        f"4. Do not include any emojis."
+        f"5. neccsarry need not to be heading s and sub headigns generalized human like plan is enogh"
     )
     
     # Try calling LLM API
@@ -372,6 +374,8 @@ def generate_llm_post_content(content_type, trend_data, tech_news_data=None, llm
     if generated_text:
         return generated_text
 
+    # NO FALLBACK AT ALL IF LLM FAILS JUST ERROR AND DISPATCH MAIL WITH THE ERR REPOSNES TO THE CAPTIAN
+    return None
     # Template fallback if LLM API key is not present
     if content_type == "TEXT_MEME":
         return (
@@ -523,6 +527,99 @@ def engage_with_viral_post(access_token, post_urn, action_type, commentary_text,
     return False, state
 
 
+# Target Post Discovery & URL-to-URN Parser
+def extract_urn_from_linkedin_url(url_or_urn):
+    """
+    Extracts LinkedIn API URN (urn:li:activity:...) from full post URL or returns URN as-is.
+    Supports formats:
+    - https://www.linkedin.com/posts/username_activity-7123456789012345678-abcd
+    - https://www.linkedin.com/feed/update/urn:li:activity:7123456789012345678/
+    - urn:li:activity:7123456789012345678
+    """
+    if not url_or_urn:
+        return None
+    url_str = str(url_or_urn).strip()
+
+    if url_str.startswith("urn:li:"):
+        return url_str
+
+    activity_match = re.search(r"activity-(\d+)", url_str)
+    if activity_match:
+        return f"urn:li:activity:{activity_match.group(1)}"
+
+    urn_match = re.search(r"(urn:li:(?:activity|share):\d+)", url_str)
+    if urn_match:
+        return urn_match.group(1)
+
+    digit_match = re.search(r"(\d{18,20})", url_str)
+    if digit_match:
+        return f"urn:li:activity:{digit_match.group(1)}"
+
+    return None
+
+
+def get_target_engagement_posts():
+    """
+    Loads target post URLs/URNs from TARGET_POST_URLS environment variable or target_posts.json file.
+    """
+    posts = []
+    env_urls = os.getenv("TARGET_POST_URLS", "")
+    if env_urls:
+        for url in env_urls.split(","):
+            if url.strip():
+                posts.append({"url": url.strip(), "topic": "Tech & AI trends"})
+
+    target_file = "target_posts.json"
+    if os.path.exists(target_file):
+        try:
+            with open(target_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    posts.extend(data)
+        except Exception as err:
+            print(f"Warning: Failed to read target_posts.json: {err}")
+
+    return posts
+
+
+def process_target_engagements(access_token, state, llm_api_key=None):
+    """
+    Parses target post URLs into API URNs, uses Groq LLM to generate value-add technical comments,
+    and executes both LIKE and COMMENT engagements on LinkedIn.
+    """
+    target_posts = get_target_engagement_posts()
+    if not target_posts:
+        print("Notice: No target engagement posts configured in TARGET_POST_URLS or target_posts.json.")
+        return state
+
+    print(f"Processing engagement for {len(target_posts)} target post(s)...")
+
+    for item in target_posts:
+        raw_url = item.get("url") if isinstance(item, dict) else item
+        topic_context = item.get("topic", "System design & AI infrastructure") if isinstance(item, dict) else "Tech trends"
+
+        post_urn = extract_urn_from_linkedin_url(raw_url)
+        if not post_urn:
+            print(f"Warning: Could not parse valid URN from target URL: {raw_url}")
+            continue
+
+        prompt = (
+            f"Write a short, insightful LinkedIn comment (2 to 3 sentences) responding to a tech post about: {topic_context}.\n"
+            f"STRICT RULES:\n"
+            f"1. Zero hashtags allowed.\n"
+            f"2. Playful, insightful tech tone.\n"
+            f"3. Do not include any emojis.\n"
+            f"4. Add technical value or ask a thought-provoking engineering question.\n"
+        )
+        comment_text = call_llm_api(prompt, provider="groq", api_key=llm_api_key)
+
+        engage_with_viral_post(access_token, post_urn, "LIKE", "", state)
+        if comment_text:
+            engage_with_viral_post(access_token, post_urn, "COMMENT", comment_text, state)
+
+    return state
+
+
 # Weekly Summary Builder
 def build_weekly_report(state):
     """
@@ -616,6 +713,9 @@ def run_automation_flow(access_token, author_urn):
         "status": "PUBLISHED"
     }
     append_post_analysis_record(analysis_record)
+
+    # Process likes and comments for target engagement posts
+    state = process_target_engagements(access_token, state)
 
     print("--- Automation Flow Completed Successfully ---")
     return True

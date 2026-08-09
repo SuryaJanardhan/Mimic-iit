@@ -83,6 +83,21 @@ This document provides a detailed function-by-function explanation of the single
 - **Parameters**: `access_token` (str), `post_urn` (str), `action_type` (str), `commentary_text` (str), `state` (dict), `max_daily_actions` (int).
 - **Returns**: Tuple `(success: bool, updated_state: dict)`.
 
+### `extract_urn_from_linkedin_url(url_or_urn)`
+- **Purpose**: Parses full LinkedIn post URLs (e.g. `https://www.linkedin.com/posts/user_activity-7123456789012345678-abc`) into valid API URN strings (`urn:li:activity:7123456789012345678`).
+- **Parameters**: `url_or_urn` (str).
+- **Returns**: Formatted URN string or None if unparseable.
+
+### `get_target_engagement_posts()`
+- **Purpose**: Reads target engagement URLs from `TARGET_POST_URLS` in `.env` or local `target_posts.json`.
+- **Parameters**: None.
+- **Returns**: List of target post dictionary objects.
+
+### `process_target_engagements(access_token, state, llm_api_key=None)`
+- **Purpose**: Pipeline function that reads target URLs, extracts URNs, uses Groq LLM to generate value-add comments, and dispatches likes and comments.
+- **Parameters**: `access_token` (str), `state` (dict), `llm_api_key` (optional str).
+- **Returns**: Updated state dictionary.
+
 ---
 
 ## 5. Reporting & Orchestration Functions
