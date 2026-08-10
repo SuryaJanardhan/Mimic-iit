@@ -16,6 +16,51 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
+def normalize_env_value(value):
+    """
+    Normalizes environment-derived values to a stripped string.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        value = str(value)
+    return value.strip().strip('"').strip("'").strip()
+
+
+def is_placeholder_value(value):
+    """
+    Detects placeholder or masked credential values.
+    """
+    cleaned = normalize_env_value(value)
+    upper_cleaned = cleaned.upper()
+    return upper_cleaned in {
+        "",
+        "***",
+        "****",
+        "YOUR_FRESH_ACCESS_TOKEN",
+        "YOUR_LINKEDIN_ACCESS_TOKEN_HERE",
+        "YOUR_PERSON_URN",
+        "URN:LI:PERSON:YOUR_PERSON_URN_ID",
+    }
+
+
+def build_linkedin_rest_headers(access_token):
+    """
+    Builds LinkedIn REST API headers aligned with official Posts API requirements.
+    """
+    token = normalize_env_value(access_token)
+    if is_placeholder_value(token):
+        raise ValueError("LINKEDIN_ACCESS_TOKEN is missing or placeholder/masked.")
+    if any(ch in token for ch in ("\r", "\n", "\t")):
+        raise ValueError("LINKEDIN_ACCESS_TOKEN contains invalid control characters.")
+    return {
+        "Authorization": f"******",
+        "X-Restli-Protocol-Version": "2.0.0",
+        "LinkedIn-Version": "202607",
+        "Content-Type": "application/json"
+    }
+
+
 # Helper: Load environment variables from local .env file
 def load_env_file(file_path=".env"):
     """
