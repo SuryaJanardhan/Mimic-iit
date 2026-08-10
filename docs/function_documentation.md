@@ -76,7 +76,7 @@ This document provides a detailed function-by-function explanation of the single
 ### `publish_linkedin_post(access_token, author_urn, commentary_text, state, max_daily_posts=500)`
 - **Purpose**: Dispatches POST request to `https://api.linkedin.com/rest/posts`. Immediately sets error flag and halts on any HTTP failure (429, 403, 500).
 - **Parameters**: `access_token` (str), `author_urn` (str), `commentary_text` (str), `state` (dict), `max_daily_posts` (int).
-- **Returns**: Tuple `(success: bool, updated_state: dict)`.
+- **Returns**: Tuple `(success: bool, updated_state: dict, post_link: optional str)`.
 
 ### `engage_with_viral_post(access_token, post_urn, action_type, commentary_text, state, max_daily_actions=5000)`
 - **Purpose**: Likes or posts value-add technical comments on target viral posts while tracking engagement quotas.
@@ -112,7 +112,12 @@ This document provides a detailed function-by-function explanation of the single
 - **Parameters**: `smtp_config` (dict), `recipient_email` (str), `report_content` (str).
 - **Returns**: Boolean status indicating email delivery success.
 
+### `send_post_links_email(smtp_config, recipient_email, post_links)`
+- **Purpose**: Sends a success email after a completed run with published LinkedIn post links.
+- **Parameters**: `smtp_config` (dict), `recipient_email` (str), `post_links` (list[str]).
+- **Returns**: Boolean status indicating email delivery success.
+
 ### `run_automation_flow(access_token, author_urn)`
 - **Purpose**: Master orchestrator function running the end-to-end pipeline in sequential order.
 - **Parameters**: `access_token` (str), `author_urn` (str).
-- **Returns**: Boolean overall execution status.
+- **Returns**: Tuple `(success: bool, published_post_links: list[str])`.
