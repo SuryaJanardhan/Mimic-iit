@@ -453,7 +453,7 @@ def publish_linkedin_post(access_token, author_urn, commentary_text, state, max_
     is_safe, remaining = check_rate_limit_budget("posts", state, max_daily_posts)
     if not is_safe:
         print("Publish Halted: 80% safety quota threshold reached for posts.")
-        return False, state
+        return False, state, None
 
     url = "https://api.linkedin.com/rest/posts"
     payload = prepare_linkedin_payload(author_urn, commentary_text)
@@ -472,20 +472,36 @@ def publish_linkedin_post(access_token, author_urn, commentary_text, state, max_
             if response.status in (200, 201):
                 state["posts_count"] = state.get("posts_count", 0) + 1
                 save_rate_limit_state(state)
+                raw_post_identifier = response.headers.get("x-restli-id")
+                response_body = response.read().decode("utf-8", errors="ignore").strip()
+                if not raw_post_identifier and response_body:
+                    try:
+                        response_json = json.loads(response_body)
+                        raw_post_identifier = (
+                            response_json.get("id")
+                            or response_json.get("urn")
+                            or response_json.get("activity")
+                        )
+                    except Exception:
+                        pass
+                post_urn = extract_urn_from_linkedin_url(raw_post_identifier)
+                post_link = f"https://www.linkedin.com/feed/update/{post_urn}/" if post_urn else None
                 print(f"Success: Post published successfully! (Total today: {state['posts_count']})")
-                return True, state
+                if post_link:
+                    print(f"Published Post Link: {post_link}")
+                return True, state, post_link
     except urllib.error.HTTPError as http_err:
         print(f"Critical Error: LinkedIn API returned HTTP {http_err.code}: {http_err.reason}")
         state["error_flag"] = True
         save_rate_limit_state(state)
-        return False, state
+        return False, state, None
     except Exception as err:
         print(f"Critical Error: Failed to publish post: {err}")
         state["error_flag"] = True
         save_rate_limit_state(state)
-        return False, state
+        return False, state, None
 
-    return False, state
+    return False, state, None
 
 
 # Engagement Engine: Like / Comment Creator
@@ -729,6 +745,35 @@ def send_weekly_email_report(smtp_config, recipient_email, report_content):
         return False
 
 
+def send_post_links_email(smtp_config, recipient_email, post_links):
+    """
+    Sends success email containing published LinkedIn post links.
+    """
+    if not recipient_email or not post_links:
+        print("Notice: Skipping success email (missing recipient or post links).")
+        return False
+
+    report_content = "LinkedIn automation run completed successfully.\n\nPublished post link(s):\n"
+    report_content += "\n".join([f"- {link}" for link in post_links])
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "LinkedIn Automation: Run Success & Published Post Links"
+        msg["From"] = smtp_config.get("sender_email")
+        msg["To"] = recipient_email
+        msg.attach(MIMEText(report_content, "plain"))
+
+        with smtplib.SMTP(smtp_config.get("host"), smtp_config.get("port")) as server:
+            server.starttls()
+            server.login(smtp_config.get("username"), smtp_config.get("password"))
+            server.sendmail(smtp_config.get("sender_email"), recipient_email, msg.as_string())
+        print("Success: Post links email sent successfully.")
+        return True
+    except Exception as err:
+        print(f"Error: Failed to send post links email: {err}")
+        return False
+
+
 # Orchestration Function: Main Execution Loop
 def run_automation_flow(access_token, author_urn):
     """
@@ -746,7 +791,7 @@ def run_automation_flow(access_token, author_urn):
 
     if state.get("error_flag"):
         print("Aborting: Previous error flag is set. Clear state file to resume.")
-        return False
+        return False, []
 
     github_trends = fetch_github_trends(language="python")
     scraped_trends = scrape_github_trending_page()
@@ -761,11 +806,11 @@ def run_automation_flow(access_token, author_urn):
     print(f"Generated Post Content:\n{post_text}\n")
 
     # Execute publication
-    success, state = publish_linkedin_post(access_token, author_urn, post_text, state)
+    success, state, post_link = publish_linkedin_post(access_token, author_urn, post_text, state)
     
     if not success:
         print("Flow Terminated: Post publication encountered issue or reached limit.")
-        return False
+        return False, []
 
     # Record post analysis entry to root JSON history
     analysis_record = {
@@ -784,11 +829,38 @@ def run_automation_flow(access_token, author_urn):
     state = process_target_engagements(access_token, state)
 
     print("--- Automation Flow Completed Successfully ---")
-    return True
+    return True, [post_link] if post_link else []
 
 
 if __name__ == "__main__":
     # Example dry run invocation
+    load_env_file()
     token = os.getenv("LINKEDIN_ACCESS_TOKEN", "YOUR_FRESH_ACCESS_TOKEN")
     urn = os.getenv("LINKEDIN_AUTHOR_URN", "urn:li:person:bT4mlIV3WS")
     print(f"Automation initialized for URN: {urn}")
+    run_success, published_post_links = run_automation_flow(token, urn)
+
+    if run_success:
+        smtp_host = os.getenv("SMTP_HOST")
+        smtp_username = os.getenv("SMTP_USERNAME")
+        smtp_password = os.getenv("SMTP_PASSWORD")
+        recipient_email = os.getenv("RECIPIENT_EMAIL")
+
+        smtp_port_raw = os.getenv("SMTP_PORT", "587")
+        try:
+            smtp_port = int(smtp_port_raw)
+        except ValueError:
+            print(f"Warning: Invalid SMTP_PORT '{smtp_port_raw}'. Falling back to 587.")
+            smtp_port = 587
+
+        if smtp_host and smtp_username and smtp_password and recipient_email:
+            smtp_config = {
+                "host": smtp_host,
+                "port": smtp_port,
+                "username": smtp_username,
+                "password": smtp_password,
+                "sender_email": smtp_username
+            }
+            send_post_links_email(smtp_config, recipient_email, published_post_links)
+        else:
+            print("Notice: SMTP credentials or RECIPIENT_EMAIL not fully configured; skipping success email.")
