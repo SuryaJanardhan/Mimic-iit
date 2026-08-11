@@ -6,6 +6,7 @@ trend aggregation, engagement routines, and weekly email reporting.
 
 import json
 import os
+import random
 import sys, re
 import time
 import urllib.request
@@ -726,9 +727,15 @@ def process_target_engagements(access_token, state, llm_api_key=None, max_daily_
             print(f"Warning: Could not parse valid URN from target URL: {raw_url}")
             continue
 
+        # Human pacing jitter delay to avoid bot detection flags
+        delay_seconds = round(random.uniform(5.0, 12.0), 2)
+        print(f"Human-like pacing: Waiting {delay_seconds}s before executing engagement...")
+        time.sleep(delay_seconds)
+
         # Execute LIKE engagement if under daily 2 limit
         if current_likes < max_daily_likes:
             engage_with_viral_post(access_token, post_urn, "LIKE", "", state, max_daily_actions=max_daily_likes)
+            time.sleep(round(random.uniform(4.0, 8.0), 2))
 
         # Execute COMMENT engagement if under daily 2 limit
         if current_comments < max_daily_comments:
